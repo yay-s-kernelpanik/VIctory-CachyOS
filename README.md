@@ -1,5 +1,7 @@
 # VIctory
 
+> Reproducir desde cero: ver [REPRODUCE.md](REPRODUCE.md).
+
 Runs Grand Theft Auto VI (Xbox Series X|S) natively on Windows, from files
 the user supplies.
 
