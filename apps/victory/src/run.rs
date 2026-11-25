@@ -369,20 +369,40 @@ mod tests {
 /// image yet.
 #[cfg(not(windows))]
 pub fn run_linux(exe: &Path, execute: bool) -> Result<()> {
+    println!("stage 1/3      prepare");
     let original = std::fs::read(exe).with_context(|| format!("reading {}", exe.display()))?;
     let prepared = victory_loader::prepare(&original)?;
     let hash = prepared.original_hash.to_hex();
     match victory_game::identify(&hash) {
-        Some(build) => println!("build          {} ({hash})", build.label),
-        None => println!("build          unknown ({hash})"),
+        Some(build) => println!("  build        {} ({hash})", build.label),
+        None => println!("  build        unknown ({hash})"),
     }
+    println!("  image        {} bytes prepared", prepared.bytes.len());
+    let imports: usize = prepared.info.imports.iter().map(|m| m.entries.len()).sum();
     println!(
-        "image          {} bytes prepared (portable prepare; no mapping on Linux yet)",
-        prepared.bytes.len()
+        "  imports      {imports} functions from {} modules",
+        prepared.info.imports.len()
     );
+    for module in prepared.info.imports.iter().take(8) {
+        println!("    {:<30} {}", module.dll, module.entries.len());
+    }
+    if prepared.info.imports.len() > 8 {
+        println!("    ... {} more modules", prepared.info.imports.len() - 8);
+    }
+    println!("stage 1/3      OK");
+
+    println!("stage 2/3      map and bind imports");
+    println!(
+        "  not available on Linux: victory_loader::load allocates the image,\n  \
+         applies relocations and binds the IAT on Windows only. The PE is\n  \
+         parsed and patched, but its code is not mapped or executed here."
+    );
+    println!("stage 2/3      BLOCKED (Windows loader)");
+
     if !execute {
-        println!("not executing (pass --execute to open the Vulkan window)");
+        println!("stage 3/3      skipped (pass --execute to open the Vulkan window)");
         return Ok(());
     }
+    println!("stage 3/3      Vulkan device");
     victory_gpu::host_vulkan::run()
 }

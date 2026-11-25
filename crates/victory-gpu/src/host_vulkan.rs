@@ -8,7 +8,7 @@
 use anyhow::{Context, Result};
 use ash::vk;
 use ash_window::enumerate_required_extensions;
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
+use raw_window_handle::{HasDisplayHandle, RawDisplayHandle, RawWindowHandle};
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
@@ -22,16 +22,15 @@ const CLEAR: [f32; 4] = [0.1, 0.2, 0.6, 1.0];
 /// glslangValidator from GLSL 450. It proves the SPIR-V -> VkShaderModule ->
 /// VkComputePipeline -> vkCmdDispatch path without game data.
 const COMPUTE_SPV: &[u32] = &[
-    0x07230203, 0x00010000, 0x0008000b, 0x0000000a, 0x00000000, 0x00020011, 0x00000001,
-    0x0006000b, 0x00000001, 0x4c534c47, 0x6474732e, 0x3035342e, 0x00000000, 0x0003000e,
-    0x00000000, 0x00000001, 0x0005000f, 0x00000005, 0x00000004, 0x6e69616d, 0x00000000,
-    0x00060010, 0x00000004, 0x00000011, 0x00000001, 0x00000001, 0x00000001, 0x00030003,
-    0x00000002, 0x000001c2, 0x00040005, 0x00000004, 0x6e69616d, 0x00000000, 0x00040047,
-    0x00000009, 0x0000000b, 0x00000019, 0x00020013, 0x00000002, 0x00030021, 0x00000003,
-    0x00000002, 0x00040015, 0x00000006, 0x00000020, 0x00000000, 0x00040017, 0x00000007,
-    0x00000006, 0x00000003, 0x0004002b, 0x00000006, 0x00000008, 0x00000001, 0x0006002c,
-    0x00000007, 0x00000009, 0x00000008, 0x00000008, 0x00000008, 0x00050036, 0x00000002,
-    0x00000004, 0x00000000, 0x00000003, 0x000200f8, 0x00000005, 0x000100fd, 0x00010038,
+    0x07230203, 0x00010000, 0x0008000b, 0x0000000a, 0x00000000, 0x00020011, 0x00000001, 0x0006000b,
+    0x00000001, 0x4c534c47, 0x6474732e, 0x3035342e, 0x00000000, 0x0003000e, 0x00000000, 0x00000001,
+    0x0005000f, 0x00000005, 0x00000004, 0x6e69616d, 0x00000000, 0x00060010, 0x00000004, 0x00000011,
+    0x00000001, 0x00000001, 0x00000001, 0x00030003, 0x00000002, 0x000001c2, 0x00040005, 0x00000004,
+    0x6e69616d, 0x00000000, 0x00040047, 0x00000009, 0x0000000b, 0x00000019, 0x00020013, 0x00000002,
+    0x00030021, 0x00000003, 0x00000002, 0x00040015, 0x00000006, 0x00000020, 0x00000000, 0x00040017,
+    0x00000007, 0x00000006, 0x00000003, 0x0004002b, 0x00000006, 0x00000008, 0x00000001, 0x0006002c,
+    0x00000007, 0x00000009, 0x00000008, 0x00000008, 0x00000008, 0x00050036, 0x00000002, 0x00000004,
+    0x00000000, 0x00000003, 0x000200f8, 0x00000005, 0x000100fd, 0x00010038,
 ];
 
 /// All the Vulkan state of the smoke path.
@@ -149,7 +148,8 @@ impl Vulkan {
         let swapchain_loader = ash::khr::swapchain::Device::new(instance, &device);
         let props = unsafe { instance.get_physical_device_properties(physical) };
 
-        self.device_name = props.device_name_as_c_str()
+        self.device_name = props
+            .device_name_as_c_str()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|_| "unknown".to_owned());
         self.device_type = props.device_type;
@@ -197,9 +197,13 @@ impl Vulkan {
         let device = self.device.as_ref().context("no device")?;
         let surface = self.surface.context("no surface")?;
         let surface_loader = self.surface_loader.as_ref().context("no surface loader")?;
-        let swapchain_loader = self.swapchain_loader.as_ref().context("no swapchain loader")?;
+        let swapchain_loader = self
+            .swapchain_loader
+            .as_ref()
+            .context("no swapchain loader")?;
 
-        let formats = unsafe { surface_loader.get_physical_device_surface_formats(physical, surface)? };
+        let formats =
+            unsafe { surface_loader.get_physical_device_surface_formats(physical, surface)? };
         let format = formats
             .iter()
             .find(|f| f.format == vk::Format::B8G8R8A8_SRGB)
@@ -214,7 +218,8 @@ impl Vulkan {
             .find(|m| *m == vk::PresentModeKHR::FIFO)
             .or_else(|| present_modes.first().copied())
             .context("no present mode")?;
-        let caps = unsafe { surface_loader.get_physical_device_surface_capabilities(physical, surface)? };
+        let caps =
+            unsafe { surface_loader.get_physical_device_surface_capabilities(physical, surface)? };
         let extent = if caps.current_extent.width == 0
             || caps.current_extent.height == 0
             || caps.current_extent.width == u32::MAX
@@ -345,7 +350,10 @@ impl Vulkan {
         let device = self.device.as_ref().context("no device")?;
         let queue = self.queue.context("no queue")?;
         let swapchain = self.swapchain.context("no swapchain")?;
-        let loader = self.swapchain_loader.as_ref().context("no swapchain loader")?;
+        let loader = self
+            .swapchain_loader
+            .as_ref()
+            .context("no swapchain loader")?;
 
         let (index, _) = unsafe {
             loader.acquire_next_image(
@@ -391,7 +399,12 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn window_event(&mut self, event_loop: &dyn ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+    fn window_event(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        _id: WindowId,
+        event: WindowEvent,
+    ) {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::RedrawRequested => {
@@ -462,7 +475,10 @@ impl App {
                 vk::api_version_patch(api)
             );
             println!("  driver:    {:#x}", self.vulkan.driver_version);
-            println!("  queue:     family {} (graphics)", self.vulkan.queue_family);
+            println!(
+                "  queue:     family {} (graphics)",
+                self.vulkan.queue_family
+            );
             println!("  compute:   dispatch 1x1x1");
             println!(
                 "  swapchain: {} images, {}x{}, {:?}",
