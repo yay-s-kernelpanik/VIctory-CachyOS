@@ -46,6 +46,35 @@ What each part does today and what it still needs:
 | Textures | Console tiled layouts and detiling for the modes the title uses | Render-target metadata planes |
 | Series S mode | Runs through the menus to the loading screen | The world, as above |
 
+## Linux / CachyOS (native port, in progress)
+
+This fork ports VIctory to Linux/CachyOS **without Wine or Proton**. It is
+not playable yet; the work is split into verifiable milestones in
+[docs/ROADMAP-LINUX.md](docs/ROADMAP-LINUX.md).
+
+| Area | State on Linux |
+|------|----------------|
+| Build and tests | works (`cargo build --release -p victory`, `cargo test --workspace`) |
+| CLI: inspect, census, shader-info, lib-exports, config | works |
+| Vulkan host | minimal smoke path: instance, device, swapchain, clear + present (`crates/victory-gpu/src/host_vulkan.rs`) |
+| `victory test-vulkan` | works: opens a window, clears it, presents one frame |
+| `victory gpu-check` | works: reports device/driver/swapchain and PASS/FAIL without game data |
+| Shaders DXIL -> SPIR-V | conversion wrapper + tests; not wired into `translate` yet |
+| `victory translate` | not available on Linux (gated to Windows/D3D12) |
+| `victory run <exe> --execute` | opens the Vulkan smoke path only; it does **not** load the title |
+| Game execution | blocked: no legal game executable in the environment |
+
+```bash
+# CachyOS
+cargo run -p victory -- gpu-check
+cargo run -p victory -- test-vulkan
+cargo test --workspace
+```
+
+See [docs/AUDITORIA-REAL.md](docs/AUDITORIA-REAL.md),
+[docs/PLAN-EJECUCION.md](docs/PLAN-EJECUCION.md) and
+[docs/ROADMAP-LINUX.md](docs/ROADMAP-LINUX.md).
+
 ## Getting started
 
 Requirements: Windows 10/11 x64, a CPU with AVX2, a Direct3D 12 GPU with
