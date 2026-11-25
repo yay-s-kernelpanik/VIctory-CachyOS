@@ -18,6 +18,22 @@ use winit::window::{Window, WindowAttributes, WindowId};
 /// The clear colour: a visible blue.
 const CLEAR: [f32; 4] = [0.1, 0.2, 0.6, 1.0];
 
+/// A trivial compute shader (`void main() {}`, 1x1x1), compiled with
+/// glslangValidator from GLSL 450. It proves the SPIR-V -> VkShaderModule ->
+/// VkComputePipeline -> vkCmdDispatch path without game data.
+const COMPUTE_SPV: &[u32] = &[
+    0x07230203, 0x00010000, 0x0008000b, 0x0000000a, 0x00000000, 0x00020011, 0x00000001,
+    0x0006000b, 0x00000001, 0x4c534c47, 0x6474732e, 0x3035342e, 0x00000000, 0x0003000e,
+    0x00000000, 0x00000001, 0x0005000f, 0x00000005, 0x00000004, 0x6e69616d, 0x00000000,
+    0x00060010, 0x00000004, 0x00000011, 0x00000001, 0x00000001, 0x00000001, 0x00030003,
+    0x00000002, 0x000001c2, 0x00040005, 0x00000004, 0x6e69616d, 0x00000000, 0x00040047,
+    0x00000009, 0x0000000b, 0x00000019, 0x00020013, 0x00000002, 0x00030021, 0x00000003,
+    0x00000002, 0x00040015, 0x00000006, 0x00000020, 0x00000000, 0x00040017, 0x00000007,
+    0x00000006, 0x00000003, 0x0004002b, 0x00000006, 0x00000008, 0x00000001, 0x0006002c,
+    0x00000007, 0x00000009, 0x00000008, 0x00000008, 0x00000008, 0x00050036, 0x00000002,
+    0x00000004, 0x00000000, 0x00000003, 0x000200f8, 0x00000005, 0x000100fd, 0x00010038,
+];
+
 /// All the Vulkan state of the smoke path.
 pub struct Vulkan {
     pub entry: Option<ash::Entry>,
@@ -39,6 +55,9 @@ pub struct Vulkan {
     pub device_type: vk::PhysicalDeviceType,
     pub api_version: u32,
     pub driver_version: u32,
+    pub compute_module: Option<vk::ShaderModule>,
+    pub compute_layout: Option<vk::PipelineLayout>,
+    pub compute_pipeline: Option<vk::Pipeline>,
 }
 
 impl Default for Vulkan {
@@ -63,6 +82,9 @@ impl Default for Vulkan {
             device_type: vk::PhysicalDeviceType::OTHER,
             api_version: 0,
             driver_version: 0,
+            compute_module: None,
+            compute_layout: None,
+            compute_pipeline: None,
         }
     }
 }
@@ -140,6 +162,31 @@ impl Vulkan {
         self.surface_loader = Some(surface_loader);
         self.surface = Some(surface);
         self.swapchain_loader = Some(swapchain_loader);
+        Ok(())
+    }
+
+    /// Creates a trivial compute pipeline from embedded SPIR-V.
+    pub fn create_compute_pipeline(&mut self) -> Result<()> {
+        let device = self.device.as_ref().context("no device")?;
+        let module_info = vk::ShaderModuleCreateInfo::default().code(COMPUTE_SPV);
+        let module = unsafe { device.create_shader_module(&module_info, None)? };
+        let layout_info = vk::PipelineLayoutCreateInfo::default();
+        let layout = unsafe { device.create_pipeline_layout(&layout_info, None)? };
+        let stage = vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::COMPUTE)
+            .module(module)
+            .name(c"main");
+        let info = vk::ComputePipelineCreateInfo::default()
+            .stage(stage)
+            .layout(layout);
+        let pipeline = unsafe {
+            device
+                .create_compute_pipelines(vk::PipelineCache::null(), &[info], None)
+                .map_err(|(_, e)| e)?[0]
+        };
+        self.compute_module = Some(module);
+        self.compute_layout = Some(layout);
+        self.compute_pipeline = Some(pipeline);
         Ok(())
     }
 
@@ -258,6 +305,10 @@ impl Vulkan {
                     &clear,
                     &[range],
                 );
+                if let Some(pipeline) = self.compute_pipeline {
+                    device.cmd_bind_pipeline(*cb, vk::PipelineBindPoint::COMPUTE, pipeline);
+                    device.cmd_dispatch(*cb, 1, 1, 1);
+                }
             }
 
             // TRANSFER_DST_OPTIMAL -> PRESENT_SRC_KHR
@@ -392,6 +443,9 @@ impl App {
             .create_swapchain(800, 600)
             .expect("create_swapchain");
         self.vulkan
+            .create_compute_pipeline()
+            .expect("create_compute_pipeline");
+        self.vulkan
             .create_command_buffer()
             .expect("create_command_buffer");
         if self.report {
@@ -409,6 +463,7 @@ impl App {
             );
             println!("  driver:    {:#x}", self.vulkan.driver_version);
             println!("  queue:     family {} (graphics)", self.vulkan.queue_family);
+            println!("  compute:   dispatch 1x1x1");
             println!(
                 "  swapchain: {} images, {}x{}, {:?}",
                 self.vulkan.images.len(),
