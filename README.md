@@ -58,10 +58,10 @@ not playable yet; the work is split into verifiable milestones in
 | CLI: inspect, census, shader-info, lib-exports, config | works |
 | Vulkan host | minimal smoke path: instance, device, swapchain, clear + present (`crates/victory-gpu/src/host_vulkan.rs`) |
 | `victory test-vulkan` | works: opens a window, clears it, presents one frame |
-| `victory gpu-check` | works: reports device/driver/swapchain and PASS/FAIL without game data |
-| Shaders DXIL -> SPIR-V | conversion wrapper + tests; not wired into `translate` yet |
-| `victory translate` | not available on Linux (gated to Windows/D3D12) |
-| `victory run <exe> --execute` | opens the Vulkan smoke path only; it does **not** load the title |
+| `victory gpu-check` | works: reports device/driver/swapchain, runs a compute dispatch, PASS/FAIL without game data |
+| Shaders DXIL -> SPIR-V | conversion wired into `translate`; `--cache` writes `.spv` |
+| `victory translate` | works on Linux (DXIL -> SPIR-V); `--pipelines` is still pending |
+| `victory run <exe> --execute` | reads and prepares the PE, then opens the Vulkan smoke path; it does **not** execute the title |
 | Game execution | blocked: no legal game executable in the environment |
 
 ```bash

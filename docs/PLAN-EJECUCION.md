@@ -57,6 +57,7 @@ sin necesitar el juego.
 **Acciones:** hechas.
 - Comando `victory gpu-check`.
 - Reporta device, tipo, versión Vulkan, driver, familia de cola, swapchain.
+- Crea un `VkComputePipeline` desde SPIR-V embebido y hace un dispatch 1x1x1.
 - Ejecuta clear + present y reporta `PASS`/`FAIL`.
 
 **Verificación:**
@@ -70,7 +71,7 @@ GPU check
   swapchain: 3 images, 800x600, B8G8R8A8_SRGB
 GPU check: PASS
 ```
-**Estado:** ✅ Completado. **Pendiente:** dispatch compute y queries BVH.
+**Estado:** ✅ Completado (incluye compute dispatch). **Pendiente:** queries BVH.
 
 ---
 
@@ -82,15 +83,19 @@ GPU check: PASS
 - ✅ Añadido `dxil-spirv` (Linux) a `victory-shader`.
 - ✅ Añadido `victory_shader::spirv` (`convert`, `convert_to_bytes`,
   `words_to_bytes`) con 3 tests.
-- ❌ Integrar en `translate` (des-gatear el módulo y escribir `.spv`).
-- ❌ Crear `VkShaderModule`/`VkPipeline` para `--pipelines`.
+- ✅ Integrado en `translate` en Linux; `--cache` escribe los `.spv`.
+- ✅ `gpu-check` crea un `VkComputePipeline` desde SPIR-V y hace dispatch.
+- ❌ `--pipelines` para todos los shaders (VkPipeline por shader) aún no.
 
 **Verificación:**
 ```bash
 $ cargo test -p victory-shader spirv
 test result: ok. 3 passed; 0 failed
+
+$ ./target/debug/victory translate tests/ --cache
+SPIR-V       0 shaders converted (Vulkan)
 ```
-**Estado:** ⚠️ Parcial. La conversión existe y compila; el CLI aún no la usa.
+**Estado:** ✅ CLI funcionando; `--pipelines` pendiente.
 
 ---
 
@@ -117,7 +122,8 @@ python3 extract_entry.py <entry>
 de prueba.
 
 **Acciones:**
-- ❌ Cargar PE en Linux (loader/binding HLE).
+- ✅ Leer y preparar el PE en Linux (`victory_loader::prepare`).
+- ❌ Mapear/ejecutar el PE (loader/binding HLE).
 - ❌ Integrar Hitos 1–4.
 - ❌ Sustituir el clear por el primer draw real.
 

@@ -23,8 +23,8 @@
 | Backend Vulkan completo (pipelines, shaders, descriptores) | **NO IMPLEMENTADO** | solo clear color |
 | `victory test-vulkan` | **FUNCIONAL** | ver §3 |
 | `victory gpu-check` | **FUNCIONAL** | ver §3 |
-| `victory translate` en Linux | **NO FUNCIONAL** (gated; sigue en Windows/D3D12) | `main.rs` |
-| `victory run <exe> --execute` en Linux | **SOLO SMOKE VULKAN**: abre ventana, clear y present; **no carga el título** | `main.rs` → `host_vulkan::run()` |
+| `victory translate` en Linux | **FUNCIONAL** para DXIL + conversión a SPIR-V; `--pipelines` aún no | `main.rs` → `translate::run_linux` |
+| `victory run <exe> --execute` en Linux | Lee y **prepara** el PE, luego smoke Vulkan; **no mapea ni ejecuta** el título | `run_linux` |
 | `victory inspect/census/shader-info/lib-exports/config` | **FUNCIONAL** | `victory --help` |
 | Datos legales del juego | **NO DISPONIBLES en el entorno** | no hay ejecutable del título |
 
@@ -88,11 +88,12 @@ es de winit/Wayland y no afecta al present.
 
 ## 4. Qué hace realmente el "run" de Linux
 
-`victory run <exe> --execute` en Linux **no parsea ni ejecuta** el PE. Solo
-imprime la ruta y llama al smoke Vulkan (`victory_gpu::host_vulkan::run()`).
-El flujo de carga de título (`victory_loader::prepare/load`, binding de
-imports, `spawn_main`) sigue siendo Windows-only (`crates/victory-hle`,
-`victory-loader` con `dlopen`, etc.). Por tanto:
+`victory run <exe> --execute` en Linux **lee y prepara** el PE con
+`victory_loader::prepare` (manipulación de bytes portable: marca DLL, quita
+entry point e imports, limpia TLS callbacks) y reporta el build. Después llama
+al smoke Vulkan (`victory_gpu::host_vulkan::run()`). **No mapea ni ejecuta** la
+imagen: el flujo de carga (`load`, binding de imports, `spawn_main`) sigue
+siendo Windows-only. Por tanto:
 
 - **NO** se puede afirmar que VIctory ejecute GTA VI en Linux.
 - **SÍ** se puede afirmar que el host Vulkan mínimo (instancia, device,
@@ -105,9 +106,10 @@ imports, `spawn_main`) sigue siendo Windows-only (`crates/victory-hle`,
 - `victory-shader` compila en Linux y traduce shaders de consola a DXIL.
 - Se añadió `dxil-spirv` (Linux) y `victory_shader::spirv` para convertir
   DXIL → SPIR-V. Tests: 3 passed (`empty`, `garbage`, `round-trip`).
-- **NO** está integrado aún en `victory translate`; no hay emisión de SPIR-V
-  desde el CLI ni creación de `VkPipeline`.
-- `victory translate` sigue gated en Windows (`#[cfg(windows)] mod translate`).
+- **Integrado** en `victory translate` en Linux: cada shader emitido se
+  convierte y se cuenta; con `--cache` se escriben los `.spv` en
+  `<cache>/shaders`.
+- `--pipelines` en Linux aún no crea `VkPipeline` (pendiente).
 
 ---
 
