@@ -13,6 +13,8 @@ pub mod gfx10;
 pub mod io;
 pub mod ir;
 pub mod native;
+#[cfg(target_os = "linux")]
+pub mod spirv;
 pub mod range;
 pub mod resource;
 pub mod structure;
