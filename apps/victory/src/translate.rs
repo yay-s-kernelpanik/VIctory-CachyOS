@@ -7,9 +7,9 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Result;
+use victory_shader::emit;
 #[cfg(windows)]
 use victory_shader::emit::host::{self, Host};
-use victory_shader::emit;
 #[cfg(windows)]
 use victory_shader::emit::validator::Validator;
 use victory_shader::structure::{self, Atom, LaneExit};
@@ -72,8 +72,13 @@ struct Tally {
     ms_emitted: usize,
     ms_validated: usize,
     ms_pipelines: usize,
-    /// DXIL shaders converted to SPIR-V (Linux).
+    /// DXIL shaders converted to SPIR-V (Linux), by kind, and those
+    /// validated with spirv-val.
     spirv: usize,
+    spirv_graphics: usize,
+    spirv_cs: usize,
+    spirv_ms: usize,
+    spirv_validated: usize,
     /// Reason → programs stopped by it, and the first one.
     failed: BTreeMap<String, (usize, String)>,
     /// With `--list`: one line per program and outcome.
@@ -136,6 +141,10 @@ impl Tally {
         self.ms_validated += other.ms_validated;
         self.ms_pipelines += other.ms_pipelines;
         self.spirv += other.spirv;
+        self.spirv_graphics += other.spirv_graphics;
+        self.spirv_cs += other.spirv_cs;
+        self.spirv_ms += other.spirv_ms;
+        self.spirv_validated += other.spirv_validated;
         for (k, n) in other.exports {
             *self.exports.entry(k).or_default() += n;
         }
@@ -161,6 +170,9 @@ struct Checks {
     /// Linux: where to write each emitted shader's SPIR-V (`--cache`).
     #[cfg(target_os = "linux")]
     spirv_dir: Option<PathBuf>,
+    /// Linux: validate each SPIR-V with spirv-val (`--validate`).
+    #[cfg(target_os = "linux")]
+    validate_spirv: bool,
 }
 
 pub fn run(
@@ -178,6 +190,7 @@ pub fn run(
 #[cfg(target_os = "linux")]
 pub fn run_linux(
     paths: Vec<PathBuf>,
+    validate: bool,
     list: bool,
     jobs: Option<usize>,
     cache: bool,
@@ -188,7 +201,7 @@ pub fn run_linux(
     } else {
         None
     };
-    run_inner(paths, false, false, list, jobs, spirv_dir)
+    run_inner(paths, validate, false, list, jobs, spirv_dir)
 }
 
 fn run_inner(
@@ -217,7 +230,19 @@ fn run_inner(
     }
     #[cfg(not(windows))]
     if validate {
-        eprintln!("validator    not available on Linux (dxil.dll is Windows-only)");
+        match std::process::Command::new("spirv-val")
+            .arg("--version")
+            .output()
+        {
+            Ok(o) if o.status.success() => println!(
+                "validator    {}",
+                String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .next()
+                    .unwrap_or("spirv-val")
+            ),
+            _ => eprintln!("validator    spirv-val not found; emit continues without validation"),
+        }
     }
     #[cfg(not(windows))]
     if pipelines {
@@ -235,18 +260,27 @@ fn run_inner(
     let seen = Mutex::new(HashSet::new());
     let total = Mutex::new(Tally::default());
     let started = std::time::Instant::now();
+    let mut skipped_large = 0usize;
+    let mut rpf_files = 0usize;
     for root in &paths {
         for entry in walkdir::WalkDir::new(root)
             .into_iter()
             .filter_map(Result::ok)
         {
-            if !entry.file_type().is_file() || entry.metadata().map_or(0, |m| m.len()) > MAX_FILE {
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            if entry.metadata().map_or(0, |m| m.len()) > MAX_FILE {
+                skipped_large += 1;
                 continue;
             }
             let Ok(data) = std::fs::read(entry.path()) else {
                 continue;
             };
             let jobs = sources(&data);
+            if jobs.is_empty() && data.starts_with(b"RPF") {
+                rpf_files += 1;
+            }
             let next = AtomicUsize::new(0);
             std::thread::scope(|s| {
                 let workers: Vec<_> = (0..threads.min(jobs.len()))
@@ -268,6 +302,8 @@ fn run_inner(
                                     .flatten(),
                                 #[cfg(target_os = "linux")]
                                 spirv_dir: spirv_dir.clone(),
+                                #[cfg(target_os = "linux")]
+                                validate_spirv: validate,
                             };
                             while let Some(job) = jobs.get(next.fetch_add(1, Ordering::Relaxed)) {
                                 translate(job, entry.path(), &seen, &mut t, &mut checks);
@@ -289,6 +325,18 @@ fn run_inner(
         }
     }
     let t = total.into_inner().unwrap_or_else(|e| e.into_inner());
+    if skipped_large > 0 {
+        eprintln!(
+            "note         {skipped_large} file(s) larger than {} GiB skipped",
+            MAX_FILE >> 30
+        );
+    }
+    if rpf_files > 0 {
+        eprintln!(
+            "note         {rpf_files} RPF archive(s) had no plain DXBC/SGD5 payloads; \
+             RPF payloads are compressed. Extract them with rage-tools-vi first."
+        );
+    }
     println!(
         "containers   {} ({} duplicates skipped)",
         t.containers, t.duplicates
@@ -338,8 +386,8 @@ fn run_inner(
         t.ms_emitted, t.ms_programs, t.ms_validated, t.ms_pipelines
     );
     println!(
-        "SPIR-V       {} shaders converted (Vulkan)\n",
-        t.spirv
+        "SPIR-V       {} shaders converted ({} graphics, {} compute, {} mesh; {} validated)\n",
+        t.spirv, t.spirv_graphics, t.spirv_cs, t.spirv_ms, t.spirv_validated
     );
     #[cfg(windows)]
     if !pairs.is_empty() {
@@ -694,8 +742,20 @@ fn check(
     match victory_shader::spirv::convert_to_bytes(&shader.dxil) {
         Ok(bytes) => {
             t.spirv += 1;
+            match shader.stage {
+                HwStage::Cs => t.spirv_cs += 1,
+                HwStage::Ms => t.spirv_ms += 1,
+                _ => t.spirv_graphics += 1,
+            }
+            if checks.validate_spirv {
+                match validate_spirv(&bytes) {
+                    Ok(()) => t.spirv_validated += 1,
+                    Err(e) => t.fail(format!("spirv-val: {e}"), &label),
+                }
+            }
             if t.list {
-                t.lines.push(format!("{}  spir-v {} bytes", label(), bytes.len()));
+                t.lines
+                    .push(format!("{}  spir-v {} bytes", label(), bytes.len()));
             }
             if let Some(dir) = &checks.spirv_dir {
                 let hash = blake3::hash(&bytes).to_hex();
@@ -740,12 +800,31 @@ fn check(
                                 .collect::<String>()
                         );
                         let _ = std::fs::write(format!("{name}.dxil"), &shader.dxil);
-                        let _ = std::fs::write(format!("{name}.txt"), format!("{}\n{text}", label()));
+                        let _ =
+                            std::fs::write(format!("{name}.txt"), format!("{}\n{text}", label()));
                     }
                 }
                 t.fail(format!("validator: {first}"), label);
             }
         }
+    }
+}
+
+/// Validates SPIR-V bytes with `spirv-val` (a temporary file).
+#[cfg(target_os = "linux")]
+fn validate_spirv(bytes: &[u8]) -> Result<(), String> {
+    let path = std::env::temp_dir().join(format!("victory-{}.spv", blake3::hash(bytes).to_hex()));
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    let out = std::process::Command::new("spirv-val").arg(&path).output();
+    let _ = std::fs::remove_file(&path);
+    match out {
+        Ok(o) if o.status.success() => Ok(()),
+        Ok(o) => Err(String::from_utf8_lossy(&o.stderr)
+            .lines()
+            .next()
+            .unwrap_or("invalid SPIR-V")
+            .to_owned()),
+        Err(e) => Err(format!("spirv-val not available: {e}")),
     }
 }
 

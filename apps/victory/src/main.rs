@@ -100,7 +100,7 @@ enum Command {
         /// every container found, once, nothing else checked or listed
         /// (with `--pipelines`, then the shader pack's pipelines). On Linux
         /// this writes the SPIR-V `.spv` files.
-        #[arg(long, conflicts_with_all = ["validate", "list"])]
+        #[arg(long, conflicts_with = "list")]
         cache: bool,
     },
     /// Prepare, map and bind a title executable; with --execute, run it.
@@ -179,8 +179,14 @@ fn main() -> Result<()> {
             jobs,
             pipelines,
             cache: true,
+            validate,
             ..
-        } => translate::warm(paths, jobs, pipelines),
+        } => {
+            if validate {
+                eprintln!("validator    not used by the Windows cache warm-up");
+            }
+            translate::warm(paths, jobs, pipelines)
+        }
         #[cfg(windows)]
         Command::Translate {
             paths,
@@ -202,6 +208,7 @@ fn main() -> Result<()> {
         #[cfg(not(windows))]
         Command::Translate {
             paths,
+            validate,
             list,
             jobs,
             cache,
@@ -213,14 +220,10 @@ fn main() -> Result<()> {
                     "pipelines    not available on Linux yet (Vulkan pipeline creation pending)"
                 );
             }
-            translate::run_linux(paths, list, jobs, cache)
+            translate::run_linux(paths, validate, list, jobs, cache)
         }
         #[cfg(not(windows))]
-        Command::Run {
-            exe,
-            execute,
-            ..
-        } => run::run_linux(&exe, execute),
+        Command::Run { exe, execute, .. } => run::run_linux(&exe, execute),
         #[cfg(not(windows))]
         Command::TestVulkan => victory_gpu::host_vulkan::run(),
         #[cfg(windows)]
