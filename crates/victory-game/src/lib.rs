@@ -5,6 +5,7 @@
 
 pub mod cityhash;
 pub mod pipelines;
+pub mod rpf9;
 pub mod sgd5;
 pub mod shaderpack;
 
