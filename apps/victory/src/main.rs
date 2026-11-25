@@ -5,9 +5,12 @@
 
 mod census;
 mod inspect;
+#[cfg(windows)]
 mod prebuild;
+#[cfg(windows)]
 mod run;
 mod shader;
+#[cfg(windows)]
 mod translate;
 
 use std::path::PathBuf;
@@ -120,6 +123,10 @@ enum Command {
         #[arg(last = true)]
         title_args: Vec<String>,
     },
+    /// Open a Vulkan window, clear it to a colour and present one frame.
+    ///
+    /// Linux only: the smoke test of the native GPU path.
+    TestVulkan,
     /// Show the resolved configuration and check it.
     Config,
 }
@@ -162,6 +169,7 @@ fn main() -> Result<()> {
             disasm,
             effects,
         } => shader::run(paths, verbose || disasm, disasm, effects),
+        #[cfg(windows)]
         Command::Translate {
             paths,
             jobs,
@@ -169,6 +177,7 @@ fn main() -> Result<()> {
             cache: true,
             ..
         } => translate::warm(paths, jobs, pipelines),
+        #[cfg(windows)]
         Command::Translate {
             paths,
             validate,
@@ -177,6 +186,7 @@ fn main() -> Result<()> {
             jobs,
             cache: false,
         } => translate::run(paths, validate, pipelines, list, jobs),
+        #[cfg(windows)]
         Command::Run {
             exe,
             unimplemented,
@@ -185,6 +195,28 @@ fn main() -> Result<()> {
             console,
             title_args: _,
         } => run::run(&exe, unimplemented, strict, execute, console),
+        #[cfg(not(windows))]
+        Command::Translate { .. } => {
+            println!("Translate command not available on Linux yet (requires D3D12)");
+            Ok(())
+        }
+        #[cfg(not(windows))]
+        Command::Run {
+            exe,
+            execute,
+            ..
+        } => {
+            println!("title          {}", exe.display());
+            if !execute {
+                println!("not executing (pass --execute to open the Vulkan window)");
+                return Ok(());
+            }
+            victory_gpu::host_vulkan::run()
+        }
+        #[cfg(not(windows))]
+        Command::TestVulkan => victory_gpu::host_vulkan::run(),
+        #[cfg(windows)]
+        Command::TestVulkan => anyhow::bail!("test-vulkan is Linux-only"),
         Command::Config => show_config(),
     }
 }
