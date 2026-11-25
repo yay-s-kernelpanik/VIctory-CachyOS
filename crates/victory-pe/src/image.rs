@@ -401,7 +401,7 @@ fn va_to_rva(va: u64, image_base: u64) -> Result<u32, PeError> {
         .ok_or_else(|| PeError::Malformed(format!("VA 0x{va:x} is outside the image")))
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
 

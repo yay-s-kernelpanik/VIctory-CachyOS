@@ -7,7 +7,9 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Result;
+#[cfg(windows)]
 use victory_shader::emit::host::{self, Host};
+#[cfg(windows)]
 use victory_shader::emit::{self, validator::Validator};
 use victory_shader::structure::{self, Atom, LaneExit};
 use victory_shader::{

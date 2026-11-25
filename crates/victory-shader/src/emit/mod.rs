@@ -175,6 +175,7 @@ mod diff_tests;
 #[cfg(all(test, windows))]
 mod flow_tests;
 #[cfg(all(windows, any(test, feature = "host")))]
+#[cfg(windows)]
 pub mod host;
 mod lower;
 mod rect;
