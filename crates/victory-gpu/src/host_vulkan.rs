@@ -91,6 +91,7 @@ impl Default for Vulkan {
 impl Vulkan {
     /// `vkCreateInstance` with the surface extensions the display needs.
     pub fn create_instance(&mut self, display: RawDisplayHandle) -> Result<()> {
+        // SAFETY: ash::Entry::load is safe when libvulkan is present; we check the Result
         let entry = unsafe { ash::Entry::load().context("loading libvulkan")? };
         let required = enumerate_required_extensions(display).context("surface extensions")?;
         let app_info = vk::ApplicationInfo::default()
@@ -99,6 +100,7 @@ impl Vulkan {
         let create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
             .enabled_extension_names(required);
+        // SAFETY: handles are valid and created above; arguments are initialized
         let instance = unsafe {
             entry
                 .create_instance(&create_info, None)
@@ -117,15 +119,18 @@ impl Vulkan {
     ) -> Result<()> {
         let entry = self.entry.as_ref().context("no entry")?;
         let instance = self.instance.as_ref().context("no instance")?;
+        // SAFETY: surface handle is created from valid display/window handles above
         let surface = unsafe {
             ash_window::create_surface(entry, instance, display, window, None)
                 .context("vkCreateSurface")?
         };
         let surface_loader = ash::khr::surface::Instance::new(entry, instance);
+        // SAFETY: instance is valid and created above
         let physical = unsafe { instance.enumerate_physical_devices()? }
             .into_iter()
             .next()
             .context("no Vulkan physical device")?;
+        // SAFETY: physical device is valid and enumerated above
         let queue_family = unsafe {
             instance
                 .get_physical_device_queue_family_properties(physical)
@@ -143,9 +148,12 @@ impl Vulkan {
         let device_info = vk::DeviceCreateInfo::default()
             .queue_create_infos(std::slice::from_ref(&queue_info))
             .enabled_extension_names(&extensions);
+        // SAFETY: physical device and device info are valid and initialized above
         let device = unsafe { instance.create_device(physical, &device_info, None)? };
+        // SAFETY: device is valid and created above
         let queue = unsafe { device.get_device_queue(queue_family, 0) };
         let swapchain_loader = ash::khr::swapchain::Device::new(instance, &device);
+        // SAFETY: physical device is valid and enumerated above
         let props = unsafe { instance.get_physical_device_properties(physical) };
 
         self.device_name = props
@@ -169,8 +177,10 @@ impl Vulkan {
     pub fn create_compute_pipeline(&mut self) -> Result<()> {
         let device = self.device.as_ref().context("no device")?;
         let module_info = vk::ShaderModuleCreateInfo::default().code(COMPUTE_SPV);
+        // SAFETY: device is valid and SPIR-V code is initialized above
         let module = unsafe { device.create_shader_module(&module_info, None)? };
         let layout_info = vk::PipelineLayoutCreateInfo::default();
+        // SAFETY: device is valid and layout info is initialized above
         let layout = unsafe { device.create_pipeline_layout(&layout_info, None)? };
         let stage = vk::PipelineShaderStageCreateInfo::default()
             .stage(vk::ShaderStageFlags::COMPUTE)
@@ -179,6 +189,7 @@ impl Vulkan {
         let info = vk::ComputePipelineCreateInfo::default()
             .stage(stage)
             .layout(layout);
+        // SAFETY: device, module and layout are valid and created above
         let pipeline = unsafe {
             device
                 .create_compute_pipelines(vk::PipelineCache::null(), &[info], None)
@@ -203,6 +214,7 @@ impl Vulkan {
             .context("no swapchain loader")?;
 
         let formats =
+            // SAFETY: physical device and surface are valid and created above
             unsafe { surface_loader.get_physical_device_surface_formats(physical, surface)? };
         let format = formats
             .iter()
@@ -211,6 +223,7 @@ impl Vulkan {
             .or_else(|| formats.first().copied())
             .context("no surface format")?;
         let present_modes =
+            // SAFETY: physical device and surface are valid and created above
             unsafe { surface_loader.get_physical_device_surface_present_modes(physical, surface)? };
         let present_mode = present_modes
             .iter()
@@ -219,6 +232,7 @@ impl Vulkan {
             .or_else(|| present_modes.first().copied())
             .context("no present mode")?;
         let caps =
+            // SAFETY: physical device and surface are valid and created above
             unsafe { surface_loader.get_physical_device_surface_capabilities(physical, surface)? };
         let extent = if caps.current_extent.width == 0
             || caps.current_extent.height == 0
@@ -245,7 +259,9 @@ impl Vulkan {
             .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
             .present_mode(present_mode)
             .clipped(true);
+        // SAFETY: swapchain loader, surface and create info are valid and initialized above
         let swapchain = unsafe { swapchain_loader.create_swapchain(&info, None)? };
+        // SAFETY: swapchain is valid and created above
         let images = unsafe { swapchain_loader.get_swapchain_images(swapchain)? };
 
         // keep `instance` used so the borrow above stays explicit
@@ -263,11 +279,13 @@ impl Vulkan {
     pub fn create_command_buffer(&mut self) -> Result<()> {
         let device = self.device.as_ref().context("no device")?;
         let pool_info = vk::CommandPoolCreateInfo::default().queue_family_index(self.queue_family);
+        // SAFETY: device and pool info are valid and initialized above
         let pool = unsafe { device.create_command_pool(&pool_info, None)? };
         let alloc_info = vk::CommandBufferAllocateInfo::default()
             .command_pool(pool)
             .level(vk::CommandBufferLevel::PRIMARY)
             .command_buffer_count(self.images.len() as u32);
+        // SAFETY: device and allocation info are valid and initialized above
         let buffers = unsafe { device.allocate_command_buffers(&alloc_info)? };
 
         let range = vk::ImageSubresourceRange {
@@ -281,6 +299,7 @@ impl Vulkan {
 
         for (i, cb) in buffers.iter().enumerate() {
             let begin = vk::CommandBufferBeginInfo::default();
+            // SAFETY: command buffer is valid and allocated above
             unsafe { device.begin_command_buffer(*cb, &begin)? };
 
             // UNDEFINED -> TRANSFER_DST_OPTIMAL
@@ -293,6 +312,7 @@ impl Vulkan {
                 .subresource_range(range)
                 .src_access_mask(vk::AccessFlags::empty())
                 .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE);
+            // SAFETY: command buffer is valid and recording has begun above; arguments are initialized
             unsafe {
                 device.cmd_pipeline_barrier(
                     *cb,
@@ -326,6 +346,7 @@ impl Vulkan {
                 .subresource_range(range)
                 .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
                 .dst_access_mask(vk::AccessFlags::empty());
+            // SAFETY: command buffer is valid and recording has begun above; arguments are initialized
             unsafe {
                 device.cmd_pipeline_barrier(
                     *cb,
@@ -355,6 +376,7 @@ impl Vulkan {
             .as_ref()
             .context("no swapchain loader")?;
 
+        // SAFETY: swapchain loader and swapchain are valid and created above
         let (index, _) = unsafe {
             loader.acquire_next_image(
                 swapchain,
@@ -368,11 +390,14 @@ impl Vulkan {
             .get(index as usize)
             .context("no command buffer for image")?;
         let submit = vk::SubmitInfo::default().command_buffers(std::slice::from_ref(&cb));
+        // SAFETY: queue, device and submit info are valid and initialized above
         unsafe { device.queue_submit(queue, &[submit], vk::Fence::null())? };
         let present = vk::PresentInfoKHR::default()
             .swapchains(std::slice::from_ref(&swapchain))
             .image_indices(std::slice::from_ref(&index));
+        // SAFETY: queue, swapchain loader and present info are valid and initialized above
         unsafe { loader.queue_present(queue, &present)? };
+        // SAFETY: device is valid and created above
         unsafe { device.device_wait_idle()? };
         tracing::info!("presented one clear-colour frame");
         Ok(())
