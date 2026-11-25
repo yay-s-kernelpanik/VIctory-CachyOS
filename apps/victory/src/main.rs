@@ -79,8 +79,9 @@ enum Command {
     /// translator and report what it cannot handle yet.
     Translate {
         paths: Vec<PathBuf>,
-        /// Check emitted DXIL with dxil.dll's validator (`VICTORY_DXIL`,
-        /// else the newest Windows SDK's). Windows only.
+        /// Validate emitted shaders: DXIL with dxil.dll's validator on
+        /// Windows (`VICTORY_DXIL`, else the newest Windows SDK's), SPIR-V
+        /// with spirv-val on Linux.
         #[arg(long)]
         validate: bool,
         /// Also create a host D3D12 pipeline for each emitted shader. With
