@@ -9,8 +9,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use anyhow::Result;
 #[cfg(windows)]
 use victory_shader::emit::host::{self, Host};
+use victory_shader::emit;
 #[cfg(windows)]
-use victory_shader::emit::{self, validator::Validator};
+use victory_shader::emit::validator::Validator;
 use victory_shader::structure::{self, Atom, LaneExit};
 use victory_shader::{
     Container, FourCC, HwStage, NativeProgram, RootType, ShaderError, ir, native_programs,
@@ -71,6 +72,8 @@ struct Tally {
     ms_emitted: usize,
     ms_validated: usize,
     ms_pipelines: usize,
+    /// DXIL shaders converted to SPIR-V (Linux).
+    spirv: usize,
     /// Reason → programs stopped by it, and the first one.
     failed: BTreeMap<String, (usize, String)>,
     /// With `--list`: one line per program and outcome.
@@ -132,6 +135,7 @@ impl Tally {
         self.ms_emitted += other.ms_emitted;
         self.ms_validated += other.ms_validated;
         self.ms_pipelines += other.ms_pipelines;
+        self.spirv += other.spirv;
         for (k, n) in other.exports {
             *self.exports.entry(k).or_default() += n;
         }
@@ -150,8 +154,13 @@ struct Checks {
     /// Shaders named in `VICTORY_PAIRS` (`vs+ps,...`, label substrings),
     /// kept to build those pipelines after the walk.
     keep: Option<Kept>,
+    #[cfg(windows)]
     validator: Option<Validator>,
+    #[cfg(windows)]
     host: Option<(Host, emit::HostShader)>,
+    /// Linux: where to write each emitted shader's SPIR-V (`--cache`).
+    #[cfg(target_os = "linux")]
+    spirv_dir: Option<PathBuf>,
 }
 
 pub fn run(
@@ -161,8 +170,39 @@ pub fn run(
     list: bool,
     jobs: Option<usize>,
 ) -> Result<()> {
+    run_inner(paths, validate, pipelines, list, jobs, None)
+}
+
+/// Linux entry: translate to DXIL, convert each shader to SPIR-V, and (with
+/// `cache`) write the `.spv` files into the shader cache.
+#[cfg(target_os = "linux")]
+pub fn run_linux(
+    paths: Vec<PathBuf>,
+    list: bool,
+    jobs: Option<usize>,
+    cache: bool,
+) -> Result<()> {
+    let spirv_dir = if cache {
+        let cfg = victory_core::Config::load()?;
+        Some(cfg.cache_subdir("shaders")?)
+    } else {
+        None
+    };
+    run_inner(paths, false, false, list, jobs, spirv_dir)
+}
+
+fn run_inner(
+    paths: Vec<PathBuf>,
+    validate: bool,
+    pipelines: bool,
+    list: bool,
+    jobs: Option<usize>,
+    #[cfg_attr(windows, allow(unused_variables))] spirv_dir: Option<PathBuf>,
+) -> Result<()> {
     let paths = crate::default_paths(paths)?;
+    #[cfg(windows)]
     let dll = validate.then(Validator::default_path).flatten();
+    #[cfg(windows)]
     if validate {
         Validator::load(dll.as_deref()).map_err(anyhow::Error::msg)?;
         println!(
@@ -171,8 +211,17 @@ pub fn run(
                 .map_or("dxil.dll".into(), |p| p.display().to_string())
         );
     }
+    #[cfg(windows)]
     if pipelines {
         Host::new(false).map_err(anyhow::Error::msg)?;
+    }
+    #[cfg(not(windows))]
+    if validate {
+        eprintln!("validator    not available on Linux (dxil.dll is Windows-only)");
+    }
+    #[cfg(not(windows))]
+    if pipelines {
+        eprintln!("pipelines    not available on Linux yet (Vulkan pipeline creation pending)");
     }
     let pairs: Vec<(String, String)> = std::env::var("VICTORY_PAIRS")
         .unwrap_or_default()
@@ -209,12 +258,16 @@ pub fn run(
                             };
                             let mut checks = Checks {
                                 keep: (!pairs.is_empty()).then(|| kept.clone()),
+                                #[cfg(windows)]
                                 validator: validate
                                     .then(|| Validator::load(dll.as_deref()).ok())
                                     .flatten(),
+                                #[cfg(windows)]
                                 host: pipelines
                                     .then(|| Host::new(false).ok().map(|h| (h, host::stub_ps())))
                                     .flatten(),
+                                #[cfg(target_os = "linux")]
+                                spirv_dir: spirv_dir.clone(),
                             };
                             while let Some(job) = jobs.get(next.fetch_add(1, Ordering::Relaxed)) {
                                 translate(job, entry.path(), &seen, &mut t, &mut checks);
@@ -284,6 +337,11 @@ pub fn run(
         "             {} emitted of {} mesh programs; {} validated, {} pipelines",
         t.ms_emitted, t.ms_programs, t.ms_validated, t.ms_pipelines
     );
+    println!(
+        "SPIR-V       {} shaders converted (Vulkan)\n",
+        t.spirv
+    );
+    #[cfg(windows)]
     if !pairs.is_empty() {
         let host = Host::new(false).map_err(anyhow::Error::msg)?;
         let kept = lock(&kept);
@@ -320,6 +378,7 @@ pub fn run(
 /// same code, so a run finds it translated or refused. With `pipelines`,
 /// then the shader pack's pipelines go into the pipeline library
 /// (`prebuild`).
+#[cfg(windows)]
 pub fn warm(paths: Vec<PathBuf>, jobs: Option<usize>, pipelines: bool) -> Result<()> {
     let paths = crate::default_paths(paths)?;
     let shaders = victory_core::Config::load()?.cache_subdir("shaders")?;
@@ -592,7 +651,7 @@ fn translate(
 
 /// Validates an emitted shader if asked to.
 fn check(
-    mut shader: emit::HostShader,
+    #[cfg_attr(not(windows), allow(unused_mut))] mut shader: emit::HostShader,
     t: &mut Tally,
     checks: &mut Checks,
     label: impl Fn() -> String,
@@ -613,6 +672,7 @@ fn check(
             &shader.dxil,
         );
     }
+    #[cfg(windows)]
     if let Some((h, stub_ps)) = &checks.host {
         let made = match shader.stage {
             HwStage::Vs => h.pipeline(&shader, stub_ps).map(drop),
@@ -630,41 +690,61 @@ fn check(
             Err(e) => t.fail(format!("pipeline: {e}"), &label),
         }
     }
-    let Some(v) = checks.validator.as_mut() else {
-        return;
-    };
-    match v.validate(&mut shader.dxil) {
-        Ok(()) => {
-            *counter(t, shader.stage, 2) += 1;
+    #[cfg(target_os = "linux")]
+    match victory_shader::spirv::convert_to_bytes(&shader.dxil) {
+        Ok(bytes) => {
+            t.spirv += 1;
             if t.list {
-                t.lines.push(format!("{}  validated", label()));
+                t.lines.push(format!("{}  spir-v {} bytes", label(), bytes.len()));
             }
-        }
-        Err(text) => {
-            let first = text
-                .lines()
-                .find(|l| l.contains("error"))
-                .unwrap_or(text.lines().next().unwrap_or(""))
-                .to_owned();
-            if let Ok(dir) = std::env::var("VICTORY_EMIT_DUMP") {
-                let n = t
-                    .failed
-                    .get(&format!("validator: {first}"))
-                    .map_or(0, |f| f.0);
-                if n < 3 {
-                    let name = format!(
-                        "{dir}/{}_{n}",
-                        first
-                            .chars()
-                            .filter(char::is_ascii_alphanumeric)
-                            .take(40)
-                            .collect::<String>()
-                    );
-                    let _ = std::fs::write(format!("{name}.dxil"), &shader.dxil);
-                    let _ = std::fs::write(format!("{name}.txt"), format!("{}\n{text}", label()));
+            if let Some(dir) = &checks.spirv_dir {
+                let hash = blake3::hash(&bytes).to_hex();
+                let path = dir.join(format!("{hash}.spv"));
+                if let Err(e) = std::fs::write(&path, &bytes) {
+                    t.fail(format!("spirv write: {e}"), &label);
                 }
             }
-            t.fail(format!("validator: {first}"), label);
+        }
+        Err(e) => t.fail(format!("spirv: {e}"), &label),
+    }
+    #[cfg(windows)]
+    {
+        let Some(v) = checks.validator.as_mut() else {
+            return;
+        };
+        match v.validate(&mut shader.dxil) {
+            Ok(()) => {
+                *counter(t, shader.stage, 2) += 1;
+                if t.list {
+                    t.lines.push(format!("{}  validated", label()));
+                }
+            }
+            Err(text) => {
+                let first = text
+                    .lines()
+                    .find(|l| l.contains("error"))
+                    .unwrap_or(text.lines().next().unwrap_or(""))
+                    .to_owned();
+                if let Ok(dir) = std::env::var("VICTORY_EMIT_DUMP") {
+                    let n = t
+                        .failed
+                        .get(&format!("validator: {first}"))
+                        .map_or(0, |f| f.0);
+                    if n < 3 {
+                        let name = format!(
+                            "{dir}/{}_{n}",
+                            first
+                                .chars()
+                                .filter(char::is_ascii_alphanumeric)
+                                .take(40)
+                                .collect::<String>()
+                        );
+                        let _ = std::fs::write(format!("{name}.dxil"), &shader.dxil);
+                        let _ = std::fs::write(format!("{name}.txt"), format!("{}\n{text}", label()));
+                    }
+                }
+                t.fail(format!("validator: {first}"), label);
+            }
         }
     }
 }

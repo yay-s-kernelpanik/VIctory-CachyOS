@@ -364,7 +364,25 @@ mod tests {
     }
 }
 
+/// Linux: read and prepare the PE (pure byte manipulation), report the
+/// build, then run the Vulkan smoke path. It does not map or execute the
+/// image yet.
 #[cfg(not(windows))]
-pub fn run(_: &Path, _: Unimplemented, _: bool, _: bool, _: Console) -> Result<()> {
-    anyhow::bail!("running titles requires Windows")
+pub fn run_linux(exe: &Path, execute: bool) -> Result<()> {
+    let original = std::fs::read(exe).with_context(|| format!("reading {}", exe.display()))?;
+    let prepared = victory_loader::prepare(&original)?;
+    let hash = prepared.original_hash.to_hex();
+    match victory_game::identify(&hash) {
+        Some(build) => println!("build          {} ({hash})", build.label),
+        None => println!("build          unknown ({hash})"),
+    }
+    println!(
+        "image          {} bytes prepared (portable prepare; no mapping on Linux yet)",
+        prepared.bytes.len()
+    );
+    if !execute {
+        println!("not executing (pass --execute to open the Vulkan window)");
+        return Ok(());
+    }
+    victory_gpu::host_vulkan::run()
 }

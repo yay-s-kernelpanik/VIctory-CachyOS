@@ -7,10 +7,8 @@ mod census;
 mod inspect;
 #[cfg(windows)]
 mod prebuild;
-#[cfg(windows)]
 mod run;
 mod shader;
-#[cfg(windows)]
 mod translate;
 
 use std::path::PathBuf;
@@ -82,13 +80,14 @@ enum Command {
     Translate {
         paths: Vec<PathBuf>,
         /// Check emitted DXIL with dxil.dll's validator (`VICTORY_DXIL`,
-        /// else the newest Windows SDK's).
+        /// else the newest Windows SDK's). Windows only.
         #[arg(long)]
         validate: bool,
         /// Also create a host D3D12 pipeline for each emitted shader. With
         /// `--cache`: then make every pipeline of the title's shader pack
         /// into the host pipeline library `run` reads (on this GPU and
-        /// driver; a second time only what is not there yet).
+        /// driver; a second time only what is not there yet). Windows only;
+        /// Linux pipeline creation is still pending.
         #[arg(long)]
         pipelines: bool,
         /// Print one line per program and outcome.
@@ -99,7 +98,8 @@ enum Command {
         jobs: Option<usize>,
         /// Only translate into the shader cache `run` reads (the warm-up):
         /// every container found, once, nothing else checked or listed
-        /// (with `--pipelines`, then the shader pack's pipelines).
+        /// (with `--pipelines`, then the shader pack's pipelines). On Linux
+        /// this writes the SPIR-V `.spv` files.
         #[arg(long, conflicts_with_all = ["validate", "list"])]
         cache: bool,
     },
@@ -200,23 +200,27 @@ fn main() -> Result<()> {
             title_args: _,
         } => run::run(&exe, unimplemented, strict, execute, console),
         #[cfg(not(windows))]
-        Command::Translate { .. } => {
-            println!("Translate command not available on Linux yet (requires D3D12)");
-            Ok(())
+        Command::Translate {
+            paths,
+            list,
+            jobs,
+            cache,
+            pipelines,
+            ..
+        } => {
+            if pipelines {
+                eprintln!(
+                    "pipelines    not available on Linux yet (Vulkan pipeline creation pending)"
+                );
+            }
+            translate::run_linux(paths, list, jobs, cache)
         }
         #[cfg(not(windows))]
         Command::Run {
             exe,
             execute,
             ..
-        } => {
-            println!("title          {}", exe.display());
-            if !execute {
-                println!("not executing (pass --execute to open the Vulkan window)");
-                return Ok(());
-            }
-            victory_gpu::host_vulkan::run()
-        }
+        } => run::run_linux(&exe, execute),
         #[cfg(not(windows))]
         Command::TestVulkan => victory_gpu::host_vulkan::run(),
         #[cfg(windows)]
