@@ -3,6 +3,9 @@
 **Actualizado:** 2026-11-25
 **Rama:** `feat/vulkan-minimo`
 
+See also: [docs/ROADMAP.md](ROADMAP.md) (file-by-file audit and todo) and
+[CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## Estado de hitos
 
 | Hito | Descripción | Estado | Verificación |

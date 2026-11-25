@@ -85,9 +85,12 @@ over 2 GiB are skipped. Without an extractor, extract them first (the
 reference `rage-tools-vi` flow), then point `translate` at the extracted
 files.
 
-See [docs/AUDITORIA-REAL.md](docs/AUDITORIA-REAL.md),
+See [docs/ROADMAP.md](docs/ROADMAP.md) (file-by-file audit and todo),
+[docs/AUDITORIA-REAL.md](docs/AUDITORIA-REAL.md),
 [docs/PLAN-EJECUCION.md](docs/PLAN-EJECUCION.md) and
 [docs/ROADMAP-LINUX.md](docs/ROADMAP-LINUX.md).
+
+Contributing: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Getting started
 
