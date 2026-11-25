@@ -26,6 +26,12 @@ diagnostics = []
 [lints]
 workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+ash = "0.38"
+ash-window = "0.13"
+winit = "0.31.0-beta.4"
+raw-window-handle = "0.6"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Performance", "Win32_System_ProcessStatus", "Win32_System_SystemInformation", "Win32_System_Threading"] }
 windows = { workspace = true, features = [

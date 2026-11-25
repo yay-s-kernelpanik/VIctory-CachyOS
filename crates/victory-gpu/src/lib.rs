@@ -34,6 +34,8 @@ pub mod fence;
 pub mod frame;
 #[cfg(windows)]
 mod host;
+#[cfg(target_os = "linux")]
+pub mod host_vulkan;
 #[cfg(windows)]
 mod indirect;
 pub mod list;
