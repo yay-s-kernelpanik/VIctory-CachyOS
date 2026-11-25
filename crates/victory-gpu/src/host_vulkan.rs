@@ -35,6 +35,10 @@ pub struct Vulkan {
     pub extent: vk::Extent2D,
     pub command_pool: Option<vk::CommandPool>,
     pub command_buffers: Vec<vk::CommandBuffer>,
+    pub device_name: String,
+    pub device_type: vk::PhysicalDeviceType,
+    pub api_version: u32,
+    pub driver_version: u32,
 }
 
 impl Default for Vulkan {
@@ -55,6 +59,10 @@ impl Default for Vulkan {
             extent: vk::Extent2D::default(),
             command_pool: None,
             command_buffers: Vec::new(),
+            device_name: String::new(),
+            device_type: vk::PhysicalDeviceType::OTHER,
+            api_version: 0,
+            driver_version: 0,
         }
     }
 }
@@ -117,7 +125,14 @@ impl Vulkan {
         let device = unsafe { instance.create_device(physical, &device_info, None)? };
         let queue = unsafe { device.get_device_queue(queue_family, 0) };
         let swapchain_loader = ash::khr::swapchain::Device::new(instance, &device);
+        let props = unsafe { instance.get_physical_device_properties(physical) };
 
+        self.device_name = props.device_name_as_c_str()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| "unknown".to_owned());
+        self.device_type = props.device_type;
+        self.api_version = props.api_version;
+        self.driver_version = props.driver_version;
         self.physical = Some(physical);
         self.device = Some(device);
         self.queue = Some(queue);
@@ -309,6 +324,7 @@ struct App {
     window: Option<Arc<dyn Window>>,
     vulkan: Vulkan,
     presented: bool,
+    report: bool,
 }
 
 impl ApplicationHandler for App {
@@ -329,8 +345,15 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::RedrawRequested => {
                 if !self.presented {
-                    if let Err(e) = self.vulkan.present_clear() {
-                        tracing::error!(error = %e, "present_clear failed");
+                    match self.vulkan.present_clear() {
+                        Ok(()) if self.report => println!("GPU check: PASS"),
+                        Ok(()) => {}
+                        Err(e) => {
+                            if self.report {
+                                println!("GPU check: FAIL: {e}");
+                            }
+                            tracing::error!(error = %e, "present_clear failed");
+                        }
                     }
                     self.presented = true;
                 }
@@ -371,6 +394,29 @@ impl App {
         self.vulkan
             .create_command_buffer()
             .expect("create_command_buffer");
+        if self.report {
+            let api = self.vulkan.api_version;
+            println!("GPU check");
+            println!(
+                "  device:    {} ({:?})",
+                self.vulkan.device_name, self.vulkan.device_type
+            );
+            println!(
+                "  vulkan:    {}.{}.{}",
+                vk::api_version_major(api),
+                vk::api_version_minor(api),
+                vk::api_version_patch(api)
+            );
+            println!("  driver:    {:#x}", self.vulkan.driver_version);
+            println!("  queue:     family {} (graphics)", self.vulkan.queue_family);
+            println!(
+                "  swapchain: {} images, {}x{}, {:?}",
+                self.vulkan.images.len(),
+                self.vulkan.extent.width,
+                self.vulkan.extent.height,
+                self.vulkan.format
+            );
+        }
         tracing::info!(
             "Vulkan ready: {}x{}, format {:?}",
             self.vulkan.extent.width,
@@ -384,14 +430,25 @@ impl App {
     }
 }
 
-/// Opens a window, initialises Vulkan and presents one clear-colour frame.
-pub fn run() -> Result<()> {
+fn run_inner(report: bool) -> Result<()> {
     let event_loop = EventLoop::new().context("creating event loop")?;
     let app = App {
         window: None,
         vulkan: Vulkan::default(),
         presented: false,
+        report,
     };
     event_loop.run_app(app).context("running event loop")?;
     Ok(())
+}
+
+/// Opens a window, initialises Vulkan and presents one clear-colour frame.
+pub fn run() -> Result<()> {
+    run_inner(false)
+}
+
+/// Hardware/runtime check without game data: device, surface, swapchain and
+/// one clear + present. Prints a PASS/FAIL report.
+pub fn gpu_check() -> Result<()> {
+    run_inner(true)
 }

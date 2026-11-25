@@ -127,6 +127,10 @@ enum Command {
     ///
     /// Linux only: the smoke test of the native GPU path.
     TestVulkan,
+    /// Hardware/runtime check with Vulkan, without game data.
+    ///
+    /// Linux only: device, surface, swapchain, clear and present.
+    GpuCheck,
     /// Show the resolved configuration and check it.
     Config,
 }
@@ -217,6 +221,10 @@ fn main() -> Result<()> {
         Command::TestVulkan => victory_gpu::host_vulkan::run(),
         #[cfg(windows)]
         Command::TestVulkan => anyhow::bail!("test-vulkan is Linux-only"),
+        #[cfg(not(windows))]
+        Command::GpuCheck => victory_gpu::host_vulkan::gpu_check(),
+        #[cfg(windows)]
+        Command::GpuCheck => anyhow::bail!("gpu-check is Linux-only"),
         Command::Config => show_config(),
     }
 }
