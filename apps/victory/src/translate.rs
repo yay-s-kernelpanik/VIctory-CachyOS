@@ -1,5 +1,9 @@
 //! The offline batch: every shader found goes through the translator, and
 //! what it cannot handle yet is tallied (decision 0003).
+//!
+//! Input formats accepted: PE images, loose shader containers (DXBC/SGD5),
+//! directories walked recursively, and RPF9 archives (Linux: extracted via
+//! the external `rage-tools-vi` tool into a temp dir; see `crate::rpf9`).
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -213,6 +217,15 @@ fn run_inner(
     #[cfg_attr(windows, allow(unused_variables))] spirv_dir: Option<PathBuf>,
 ) -> Result<()> {
     let paths = crate::default_paths(paths)?;
+    // On Linux, expand any RPF9 archives into temporary directories before
+    // scanning. The expanded inputs (and their temp dirs) are kept alive for
+    // the whole run.
+    #[cfg(target_os = "linux")]
+    let (_rpf_expansion, paths) = {
+        let expanded = crate::rpf9::preprocess(paths);
+        let p = expanded.paths.clone();
+        (expanded, p)
+    };
     #[cfg(windows)]
     let dll = validate.then(Validator::default_path).flatten();
     #[cfg(windows)]
@@ -331,7 +344,11 @@ fn run_inner(
             MAX_FILE >> 30
         );
     }
-    if rpf_files > 0 {
+    #[cfg(target_os = "linux")]
+    let rpf9_unavailable = _rpf_expansion.rpf9_unavailable;
+    #[cfg(not(target_os = "linux"))]
+    let rpf9_unavailable = 0usize;
+    if rpf_files > 0 && rpf9_unavailable == 0 {
         eprintln!(
             "note         {rpf_files} RPF archive(s) had no plain DXBC/SGD5 payloads; \
              RPF payloads are compressed. Extract them with rage-tools-vi first."
@@ -868,6 +885,17 @@ mod tests {
             return;
         }
         assert!(validate_spirv(b"not spirv").is_err());
+    }
+
+    #[test]
+    fn detects_rpf9() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.rpf");
+        std::fs::write(&p, b"RPF9rest").unwrap();
+        assert!(crate::rpf9::is_rpf9(&p));
+        let p2 = dir.path().join("b.bin");
+        std::fs::write(&p2, b"not rpf").unwrap();
+        assert!(!crate::rpf9::is_rpf9(&p2));
     }
 }
 

@@ -5,6 +5,8 @@
 
 mod census;
 mod inspect;
+#[cfg(target_os = "linux")]
+mod rpf9;
 #[cfg(windows)]
 mod prebuild;
 mod run;

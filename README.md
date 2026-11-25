@@ -60,7 +60,7 @@ not playable yet; the work is split into verifiable milestones in
 | `victory test-vulkan` | works: opens a window, clears it, presents one frame |
 | `victory gpu-check` | works: reports device/driver/swapchain, runs a compute dispatch, PASS/FAIL without game data |
 | Shaders DXIL -> SPIR-V | conversion wired into `translate` for VS/PS/CS/MS; `--cache` writes `.spv`; `--validate` runs `spirv-val` |
-| `victory translate` | works on Linux (DXIL -> SPIR-V); `--pipelines` is still pending |
+| `victory translate` | works on Linux (DXIL -> SPIR-V); `--pipelines` is still pending; detects RPF9 and uses `rage-tools-vi` if available |
 | `victory run <exe> --execute` | reports three stages: prepare (PE parse/patch + imports), map/bind (blocked: Windows loader), Vulkan device (smoke window) |
 | Game execution | blocked: no legal game executable in the environment |
 
@@ -77,9 +77,13 @@ victory translate <dir> --cache --validate
 victory run <game>/game_scarlett_master.exe --execute
 ```
 
-`translate` does not unpack RPF9 archives: payloads are compressed, and
-archives over 2 GiB are skipped. Extract them first (the reference
-`rage-tools-vi` flow), then point `translate` at the extracted files.
+`translate` detects RPF9 archives by magic (`RPF9`/`9FPR`). On Linux it
+tries to invoke an external `rage-tools-vi` extractor into a temporary
+directory and then continues with the extracted shaders; if the tool is
+missing it prints a clear note and leaves the archive untouched. Archives
+over 2 GiB are skipped. Without an extractor, extract them first (the
+reference `rage-tools-vi` flow), then point `translate` at the extracted
+files.
 
 See [docs/AUDITORIA-REAL.md](docs/AUDITORIA-REAL.md),
 [docs/PLAN-EJECUCION.md](docs/PLAN-EJECUCION.md) and
