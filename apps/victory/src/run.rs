@@ -2,6 +2,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
+#[cfg(windows)]
 use crate::{Console, Unimplemented};
 
 #[cfg(windows)]

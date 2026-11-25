@@ -47,7 +47,7 @@ pub mod xuser;
 use crate::HleModule;
 
 pub(crate) fn all() -> Vec<HleModule> {
-    let mut all = vec![
+    let all = vec![
         kernel::module(),
         xgameruntime::module(),
         gameinput::module(),

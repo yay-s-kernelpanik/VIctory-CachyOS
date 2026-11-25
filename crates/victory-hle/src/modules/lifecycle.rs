@@ -7,9 +7,9 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 #![allow(clippy::too_many_arguments)]
 
-use std::ffi::c_void;
 
-use crate::{HleModule, hle_export};
+
+use crate::HleModule;
 
 
 #[cfg(not(windows))]
@@ -29,6 +29,7 @@ pub fn wait_for_previous() {
 }
 
 #[cfg(not(windows))]
+#[allow(dead_code)]
 pub(crate) fn module() -> HleModule {
     HleModule {
         name: "lifecycle",

@@ -78,6 +78,7 @@ pub fn extract_to_temp(rpf_path: &Path) -> Result<tempfile::TempDir, RpfError> {
 /// Result of expanding a list of input paths: RPF9 archives are replaced
 /// by their extracted temporary directories (kept alive in `_temp_dirs`).
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ExpandedInputs {
     pub paths: Vec<PathBuf>,
     pub _temp_dirs: Vec<tempfile::TempDir>,

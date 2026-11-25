@@ -179,6 +179,7 @@ struct Checks {
     validate_spirv: bool,
 }
 
+#[cfg(windows)]
 pub fn run(
     paths: Vec<PathBuf>,
     validate: bool,

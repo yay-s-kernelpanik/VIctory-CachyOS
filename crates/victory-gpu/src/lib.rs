@@ -1,4 +1,5 @@
 //! D3D12.X on host D3D12.
+#![allow(dead_code, unused_variables, unused_imports)] // TODO(linux): port to Vulkan
 //!
 //! D3D12.X records commands from code inlined into the title, which writes
 //! packets into the command list while its put pointer is below a limit and
