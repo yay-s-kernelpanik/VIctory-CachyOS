@@ -59,9 +59,9 @@ not playable yet; the work is split into verifiable milestones in
 | Vulkan host | minimal smoke path: instance, device, swapchain, clear + present (`crates/victory-gpu/src/host_vulkan.rs`) |
 | `victory test-vulkan` | works: opens a window, clears it, presents one frame |
 | `victory gpu-check` | works: reports device/driver/swapchain, runs a compute dispatch, PASS/FAIL without game data |
-| Shaders DXIL -> SPIR-V | conversion wired into `translate`; `--cache` writes `.spv` |
+| Shaders DXIL -> SPIR-V | conversion wired into `translate` for VS/PS/CS/MS; `--cache` writes `.spv`; `--validate` runs `spirv-val` |
 | `victory translate` | works on Linux (DXIL -> SPIR-V); `--pipelines` is still pending |
-| `victory run <exe> --execute` | reads and prepares the PE, then opens the Vulkan smoke path; it does **not** execute the title |
+| `victory run <exe> --execute` | reports three stages: prepare (PE parse/patch + imports), map/bind (blocked: Windows loader), Vulkan device (smoke window) |
 | Game execution | blocked: no legal game executable in the environment |
 
 ```bash
@@ -69,7 +69,17 @@ not playable yet; the work is split into verifiable milestones in
 cargo run -p victory -- gpu-check
 cargo run -p victory -- test-vulkan
 cargo test --workspace
+
+# Shaders: plain DXBC/SGD5 payloads only (RPF9 payloads are compressed)
+victory translate <dir> --cache --validate
+
+# The real title: the log names the first stage that fails
+victory run <game>/game_scarlett_master.exe --execute
 ```
+
+`translate` does not unpack RPF9 archives: payloads are compressed, and
+archives over 2 GiB are skipped. Extract them first (the reference
+`rage-tools-vi` flow), then point `translate` at the extracted files.
 
 See [docs/AUDITORIA-REAL.md](docs/AUDITORIA-REAL.md),
 [docs/PLAN-EJECUCION.md](docs/PLAN-EJECUCION.md) and
@@ -144,7 +154,7 @@ victory census [paths...] [--missing] [--strict]
 victory lib-exports <import.lib> [--list]
 victory shader-info [paths...] [--verbose] [--disasm] [--effects]
 victory translate [paths...] [--validate] [--pipelines] [--list] [--jobs N]
-victory translate [paths...] --cache [--pipelines] [--jobs N]
+victory translate [paths...] --cache [--validate] [--pipelines] [--jobs N]
 victory run <exe> [--execute] [--unimplemented trap|zero] [--strict]
             [--console series-x|series-s] [-- <title arguments>]
 victory config

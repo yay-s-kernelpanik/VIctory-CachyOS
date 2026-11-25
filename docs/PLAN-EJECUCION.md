@@ -84,16 +84,21 @@ GPU check: PASS
 - ✅ Añadido `victory_shader::spirv` (`convert`, `convert_to_bytes`,
   `words_to_bytes`) con 3 tests.
 - ✅ Integrado en `translate` en Linux; `--cache` escribe los `.spv`.
+- ✅ `--validate` valida cada `.spv` con `spirv-val` (SPIRV-Tools).
+- ✅ Contadores por etapa: gráficos (VS/PS), compute, mesh.
 - ✅ `gpu-check` crea un `VkComputePipeline` desde SPIR-V y hace dispatch.
 - ❌ `--pipelines` para todos los shaders (VkPipeline por shader) aún no.
+- ⚠️ `Gs`/`Ls`/`Hs`/`Es` son etapas fusionadas del console: no se emiten
+  por separado; la conversión es agnóstica de etapa.
 
 **Verificación:**
 ```bash
 $ cargo test -p victory-shader spirv
 test result: ok. 3 passed; 0 failed
 
-$ ./target/debug/victory translate tests/ --cache
-SPIR-V       0 shaders converted (Vulkan)
+$ ./target/debug/victory translate tests/ --cache --validate
+validator    SPIRV-Tools v2026.4
+SPIR-V       0 shaders converted (0 graphics, 0 compute, 0 mesh; 0 validated)
 ```
 **Estado:** ✅ CLI funcionando; `--pipelines` pendiente.
 
@@ -156,18 +161,30 @@ hasta que el usuario aporte una copia legal.
 Hito 0 (sistema)
   └─ Hito 1 (Vulkan clear)  ✅
        └─ Hito 2 (gpu-check) ✅
-            └─ Hito 3 (SPIR-V) ⚠️ parcial
+            └─ Hito 3 (SPIR-V) ✅ sin --pipelines
                  └─ Hito 4 (assets) ⛔
-                      └─ Hito 5 (menú) ⛔
+                      └─ Hito 5 (menú) ⚠️ staging listo
                            └─ Hito 6 (juego real) ⛔
 ```
 
 ## Lo que se puede hacer ya (sin ejecutable)
 
-1. Completar Hito 3: des-gatear `translate` y escribir `.spv`.
-2. Ampliar `gpu-check` con un dispatch compute.
-3. Integrar `rage-tools-vi` si el usuario aporta el repo.
-4. Auditar `five-star-recomp` si el usuario aporta el repo.
+1. Completar Hito 3+: crear `VkPipeline` desde SPIR-V (`--pipelines`).
+2. Integrar `rage-tools-vi` si el usuario aporta el repo (RPF9).
+3. Auditar `five-star-recomp` si el usuario aporta el repo.
+4. Portar `victory_loader::load`/binding a Linux (Hito 5).
+
+## Hito 5 — Staging de `run` en Linux
+
+`victory run <pe>` reporta:
+
+1. `stage 1/3 prepare`: parsea y parchea el PE, lista build, tamaño e imports.
+2. `stage 2/3 map and bind imports`: **BLOCKED** (`victory_loader::load` es
+   Windows-only); no se mapea ni ejecuta código.
+3. `stage 3/3 Vulkan device`: con `--execute`, abre la ventana y presenta.
+
+Verificado con un PE32+ mínimo generado con `clang --target=x86_64-pc-windows-msvc`
++ `lld-link`: stage 1 OK, stage 2 bloqueado, stage 3 Vulkan ready + present.
 
 ## Lo que NO se puede hacer todavía
 

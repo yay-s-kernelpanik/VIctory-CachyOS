@@ -23,8 +23,8 @@
 | Backend Vulkan completo (pipelines, shaders, descriptores) | **NO IMPLEMENTADO** | solo clear color |
 | `victory test-vulkan` | **FUNCIONAL** | ver §3 |
 | `victory gpu-check` | **FUNCIONAL** | ver §3 |
-| `victory translate` en Linux | **FUNCIONAL** para DXIL + conversión a SPIR-V; `--pipelines` aún no | `main.rs` → `translate::run_linux` |
-| `victory run <exe> --execute` en Linux | Lee y **prepara** el PE, luego smoke Vulkan; **no mapea ni ejecuta** el título | `run_linux` |
+| `victory translate` en Linux | **FUNCIONAL** para VS/PS/CS/MS → SPIR-V; `--validate` usa `spirv-val`; `--pipelines` aún no | `main.rs` → `translate::run_linux` |
+| `victory run <exe> --execute` en Linux | 3 stages: prepare (PE + imports), map/bind (bloqueado), Vulkan device; **no mapea ni ejecuta** el título | `run_linux` |
 | `victory inspect/census/shader-info/lib-exports/config` | **FUNCIONAL** | `victory --help` |
 | Datos legales del juego | **NO DISPONIBLES en el entorno** | no hay ejecutable del título |
 
@@ -107,9 +107,12 @@ siendo Windows-only. Por tanto:
 - Se añadió `dxil-spirv` (Linux) y `victory_shader::spirv` para convertir
   DXIL → SPIR-V. Tests: 3 passed (`empty`, `garbage`, `round-trip`).
 - **Integrado** en `victory translate` en Linux: cada shader emitido se
-  convierte y se cuenta; con `--cache` se escriben los `.spv` en
-  `<cache>/shaders`.
+  convierte y se cuenta (gráficos, compute, mesh); con `--cache` se escriben
+  los `.spv` en `<cache>/shaders`.
+- `--validate` valida cada `.spv` con `spirv-val` (SPIRV-Tools v2026.4).
 - `--pipelines` en Linux aún no crea `VkPipeline` (pendiente).
+- Las etapas `Gs`/`Ls`/`Hs`/`Es` del console son etapas fusionadas: no se
+  emiten por separado; la conversión a SPIR-V es agnóstica de etapa.
 
 ---
 
@@ -127,7 +130,8 @@ No están presentes en el entorno (no se adjuntaron rutas). El análisis de
 | Bloqueo | Impacto | Workaround |
 |---|---|---|
 | Sin ejecutable legal del juego | No se puede probar carga real | fixtures + `gpu-check` + datos del usuario |
-| `translate` y `run` de título gated | No hay pipeline de shaders/juego en Linux | des-gatear + integrar SPIR-V + cargar PE |
+| RPF9 comprimido / >2 GiB | `translate` solo ve DXBC/SGD5 plano | extraer con `rage-tools-vi` |
+| `run` no mapea el PE | `victory_loader::load` es Windows-only | portar loader/binding |
 | Backend Vulkan solo clear | No dibuja geometría | pipelines, shaders, descriptores |
 | Repos de referencia no adjuntos | No se puede auditar su código | aportar rutas/clones |
 
